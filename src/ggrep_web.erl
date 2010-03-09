@@ -46,11 +46,16 @@ loop(Req, DocRoot) ->
 						http:request(get, {URL, [{"User-Agent", UA}, {"Referer",
 						"http://www.vandeenensupport.com"}]},[],[]),
 					Struct = mochijson2:decode(Body),
-					{struct, L1} = Struct,
-					%%io:format("~p ~n", [L1]),
-					interpret(L1),
-					Result = {struct, [{<<"google">>, <<"result">>}]},
-					DataOut = mochijson2:encode(Result),
+					ResponseData=struct:get_value(<<"responseData">>, Struct),
+					ResponseResults=struct:get_value(<<"results">>, ResponseData),
+					Results={struct, [{<<"results">>, interpret_data(ResponseResults,[])}]},
+
+
+
+					io:format("Results=~n~p~n", [Results]),
+
+
+					DataOut = mochijson2:encode(Results),
 					Req:ok({"application/json", [], [DataOut]} );
 					
                 _ ->
@@ -61,52 +66,19 @@ loop(Req, DocRoot) ->
     end.
 
 
-interpret([{<<"responseData">>, {struct, L}}|Tail]) ->
-	interpret_results(L),
-	interpret(Tail) ;
-
-interpret([{<<"responseDetails">>, Details}|Tail]) ->
-	io:format("interpret L= ~p ~n", [Details]),
-	interpret(Tail) ;
-
-interpret([{<<"responseStatus">>, Statuscode}|Tail]) ->
-	io:format("responseStatus = ~p ~n", [Statuscode]),
-	interpret(Tail) ;
-
-interpret([]) ->
-	io:format("ready~n").
-
-
-
-interpret_results([{<<"results">>, ResultList}|Tail]) ->
-	%%io:format("ResultList results: ~p~n", [ResultList]),
-	interpret_data(ResultList),
-	interpret_results(Tail);
-
-interpret_results([{<<"cursor">>, ResultList}|Tail]) ->
-	%%io:format("ResultList cursor: ~p~n", [ResultList]),
-	{struct, L}=ResultList,
-	%%io:format("ResultList L: ~p~n", [L]),
-	interpret_cursor(L),
-	interpret_results(Tail);
-
-interpret_results([]) ->
-	[].
 
 %% actual html search result data
-interpret_data([{struct, R}|Tail]) ->
-	io:format("data: ~p ~n", [R]),
-	interpret_data(Tail);
-interpret_data([]) ->
-	[].
+interpret_data([R|Tail], Acc) ->
+	V=interpret_one_dataset(R),
+	interpret_data(Tail, [V|Acc]);
 
-%% cursor data
-interpret_cursor([H|Tail]) ->
-	io:format("cursor: ~p ~n", [H]),
-	interpret_cursor(Tail);
+interpret_data([], Acc) ->
+	Acc.
 
-interpret_cursor([]) ->
-	[].
+% one dataset is an array with various fields	
+
+interpret_one_dataset(R) ->
+	struct:get_value(<<"content">>, R).
 
 
 %% Internal API
