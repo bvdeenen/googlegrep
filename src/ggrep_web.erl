@@ -35,18 +35,20 @@ loop(Req, DocRoot) ->
 				"ggrep" ->
 					Data = Req:parse_post(),
 					Searchstring = proplists:get_value("searchstring", Data),
-					Regexstring = proplists:get_value("regexstring", Data),
-					io:format("Searchstring : ~p, Regexstring: ~p~n",
-							[Searchstring, Regexstring]),
-					URL="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q=%22Bart%20van%20Deenen%22",
+					_Regexstring = proplists:get_value("regexstring", Data),
+
+					URL="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
+						++ edoc_lib:escape_uri(Searchstring),
 					UA="bart's erlang google thingy",
+					io:format("URL= ~p ~n", [URL]),
 
 					{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
 						http:request(get, {URL, [{"User-Agent", UA}, {"Referer",
 						"http://www.vandeenensupport.com"}]},[],[]),
-					io:format("~p ~n", [Body]),
 					Struct = mochijson2:decode(Body),
-					io:format("~p ~n", [Struct]),
+					{struct, L1} = Struct,
+					%%io:format("~p ~n", [L1]),
+					interpret(L1),
 					Result = {struct, [{<<"google">>, <<"result">>}]},
 					DataOut = mochijson2:encode(Result),
 					Req:ok({"application/json", [], [DataOut]} );
@@ -57,6 +59,55 @@ loop(Req, DocRoot) ->
         _ ->
             Req:respond({501, [], []})
     end.
+
+
+interpret([{<<"responseData">>, {struct, L}}|Tail]) ->
+	interpret_results(L),
+	interpret(Tail) ;
+
+interpret([{<<"responseDetails">>, Details}|Tail]) ->
+	io:format("interpret L= ~p ~n", [Details]),
+	interpret(Tail) ;
+
+interpret([{<<"responseStatus">>, Statuscode}|Tail]) ->
+	io:format("responseStatus = ~p ~n", [Statuscode]),
+	interpret(Tail) ;
+
+interpret([]) ->
+	io:format("ready~n").
+
+
+
+interpret_results([{<<"results">>, ResultList}|Tail]) ->
+	%%io:format("ResultList results: ~p~n", [ResultList]),
+	interpret_data(ResultList),
+	interpret_results(Tail);
+
+interpret_results([{<<"cursor">>, ResultList}|Tail]) ->
+	%%io:format("ResultList cursor: ~p~n", [ResultList]),
+	{struct, L}=ResultList,
+	%%io:format("ResultList L: ~p~n", [L]),
+	interpret_cursor(L),
+	interpret_results(Tail);
+
+interpret_results([]) ->
+	[].
+
+%% actual html search result data
+interpret_data([{struct, R}|Tail]) ->
+	io:format("data: ~p ~n", [R]),
+	interpret_data(Tail);
+interpret_data([]) ->
+	[].
+
+%% cursor data
+interpret_cursor([H|Tail]) ->
+	io:format("cursor: ~p ~n", [H]),
+	interpret_cursor(Tail);
+
+interpret_cursor([]) ->
+	[].
+
 
 %% Internal API
 
