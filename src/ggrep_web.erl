@@ -32,30 +32,34 @@ loop(Req, DocRoot) ->
             end;
         'POST' ->
             case Path of
+				% form action
 				"ggrep" ->
 					Data = Req:parse_post(),
 					Searchstring = proplists:get_value("searchstring", Data),
-					_Regexstring = proplists:get_value("regexstring", Data),
+					Regexstring = proplists:get_value("regexstring", Data),
+					Re= re:compile(Regexstring) ,
 
-					URL="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
+					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
 						++ edoc_lib:escape_uri(Searchstring),
-					UA="bart's erlang google thingy",
-					io:format("URL= ~p ~n", [URL]),
+					UserAgent="bart's erlang google thingy",
 
 					{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
-						http:request(get, {URL, [{"User-Agent", UA}, {"Referer",
+						http:request(get, {Url, [{"User-Agent", UserAgent}, {"Referer",
 						"http://www.vandeenensupport.com"}]},[],[]),
 					Struct = mochijson2:decode(Body),
 					ResponseData=struct:get_value(<<"responseData">>, Struct),
 					ResponseResults=struct:get_value(<<"results">>, ResponseData),
-					Results={struct, [{<<"results">>, interpret_data(ResponseResults,[])}]},
 
+					% scan the results and filter with the regular expression
+					case Re of 
+						{ok, MP} -> 
+							Results= interpret_data(ResponseResults, MP, []);
+						{error, ErrorSpec} ->
+							io:format("ErrorSpec: ~p~n", [ErrorSpec]),
+							Results = interpret_data(ResponseResults, [])
+					end,		
 
-
-					io:format("Results=~n~p~n", [Results]),
-
-
-					DataOut = mochijson2:encode(Results),
+					DataOut = mochijson2:encode( {struct, [{<<"results">>, Results}]}),
 					Req:ok({"application/json", [], [DataOut]} );
 					
                 _ ->
@@ -68,18 +72,40 @@ loop(Req, DocRoot) ->
 
 
 %% actual html search result data
-interpret_data([R|Tail], Acc) ->
+interpret_data([R|Tail], Re, Acc ) ->
+	V=interpret_one_dataset(R, Re),
+	case V of
+		nomatch -> Acc1=Acc;
+		_ -> Acc1=[V|Acc]
+	end,	
+	interpret_data(Tail, Re, Acc1);
+
+interpret_data([], _, Acc) ->
+	lists:reverse(Acc).
+
+interpret_data([R|Tail], Acc ) ->
 	V=interpret_one_dataset(R),
 	interpret_data(Tail, [V|Acc]);
 
 interpret_data([], Acc) ->
-	Acc.
+	lists:reverse(Acc).
 
 % one dataset is an array with various fields	
+%% has valid compiled Re
+interpret_one_dataset(R, MP) ->
+	Content=struct:get_value(<<"content">>, R),
+	io:format("One record=~n~p~n", [R]),
+	S=binary_to_list(Content),
+	case re:run(S,MP) of
+		{match, _} -> R;
+		nomatch -> nomatch
+	end.	
 
 interpret_one_dataset(R) ->
-	struct:get_value(<<"content">>, R).
-
+	Content=struct:get_value(<<"content">>, R),
+	S=binary_to_list(Content),
+	io:format("~p~n", [S]),
+	S.
 
 %% Internal API
 
@@ -93,3 +119,5 @@ get_option(Option, Options) ->
 -include_lib("eunit/include/eunit.hrl").
 -ifdef(TEST).
 -endif.
+
+%% vim:tw=0
