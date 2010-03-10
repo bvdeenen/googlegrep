@@ -1,0 +1,13 @@
+Makefile
+deps/
+ebin/
+src/Makefile
+src/ggrep.app
+src/ggrep.erl
+src/ggrep.hrl
+src/ggrep_app.erl
+src/ggrep_deps.erl
+src/ggrep_sup.erl
+start-dev.sh
+start.sh
+support/
