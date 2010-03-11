@@ -4,6 +4,11 @@
 <link rel="stylesheet" type="text/css"
 	href="http://ajax.googleapis.com/ajax/libs/dojo/1.4/dijit/themes/tundra/tundra.css">
 
+<style type='text/css'>
+.result {
+	border-top: thin solid blue;
+}
+</style>
 <script src='http://ajax.googleapis.com/ajax/libs/dojo/1.4.1/dojo/dojo.xd.js'
 	type='text/javascript' 
     djConfig="parseOnLoad: true, isDebug:true, usePlainJson:true" >
@@ -32,8 +37,7 @@ function sendForm() {
 			form: dojo.byId("form1"),
 			handleAs: "json",
 			load: function(data) {
-				console.log(data);
-				//dojo.byId("response").innerHTML = "Form posted.";
+				handle_results(data.results);
 			},
 			error: function(error) {
 				//We'll 404 in the demo, but that's okay.  We don't have a 'postIt' service on the
@@ -48,6 +52,21 @@ function sendForm() {
 }
 dojo.addOnLoad(sendForm);
 
+
+function handle_results(data)
+{
+	console.log(data);
+	var div=dojo.byId("results");
+	div.innerHTML="";
+	for(var i=0;i<data.length;i++) {
+		var d=document.createElement("div");
+		dojo.addClass(d,"result");
+		d.innerHTML=data[i].content;
+		console.log(data[i].content);
+		div.appendChild(d);
+		
+	}
+}
 
 
 </script>
@@ -69,5 +88,9 @@ dojo.addOnLoad(sendForm);
 </button>
 
 </form>
+
+<hr>
+<div id='results'>
+</div>
 </body>
 </html>

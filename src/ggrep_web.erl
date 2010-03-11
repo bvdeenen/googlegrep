@@ -41,23 +41,8 @@ loop(Req, DocRoot) ->
 
 					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
 						++ edoc_lib:escape_uri(Searchstring),
-					UserAgent="bart's erlang google thingy",
-
-					{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
-						http:request(get, {Url, [{"User-Agent", UserAgent}, {"Referer",
-						"http://www.vandeenensupport.com"}]},[],[]),
-					Struct = mochijson2:decode(Body),
-					ResponseData=struct:get_value(<<"responseData">>, Struct),
-					ResponseResults=struct:get_value(<<"results">>, ResponseData),
-
-					% scan the results and filter with the regular expression
-					case Re of 
-						{ok, MP} -> 
-							Results= interpret_data(ResponseResults, MP, []);
-						{error, ErrorSpec} ->
-							io:format("ErrorSpec: ~p~n", [ErrorSpec]),
-							Results = interpret_data(ResponseResults, [])
-					end,		
+					
+					Results = talk_to_google(Url, Re, [], 0),
 
 					DataOut = mochijson2:encode( {struct, [{<<"results">>, Results}]}),
 					Req:ok({"application/json", [], [DataOut]} );
@@ -70,13 +55,50 @@ loop(Req, DocRoot) ->
     end.
 
 
+talk_to_google(Url, Re, ResultsIn, Start ) ->
+	UserAgent="bart's erlang google thingy",
+
+	UrlWithStart=lists:flatten(Url ++ io_lib:format("&start=~p", [Start])),
+	io:format("talk_to_google ~p ~p~n", [UrlWithStart, length(ResultsIn)]),
+
+	{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
+		http:request(get, {UrlWithStart, 
+			[{"User-Agent", UserAgent}, {"Referer",
+		"http://www.vandeenensupport.com"}]},[],[]),
+	Struct = mochijson2:decode(Body),
+	ResponseData=struct:get_value(<<"responseData">>, Struct),
+
+	io:format("responseData = ~p ~n", [ResponseData]),
+	case ResponseData of
+		null -> 
+			ResultsIn;
+		_ ->
+			ResponseResults=struct:get_value(<<"results">>, ResponseData),
+			% scan the results and filter with the regular expression
+			case Re of 
+				{ok, MP} -> 
+					Results= ResultsIn ++ interpret_data(ResponseResults, MP, []);
+				{error, _ErrorSpec} ->
+					Results= ResultsIn ++ interpret_data(ResponseResults,  [])
+			end,
+
+
+			if 
+				length(Results) < 20 ->
+					_CursorData = struct:get_value(<<"cursor">>, ResponseData),
+					talk_to_google(Url, Re, Results, Start+4);
+				true ->
+					Results
+			end		
+		end.		
+
+	
 
 %% actual html search result data
 interpret_data([R|Tail], Re, Acc ) ->
-	V=interpret_one_dataset(R, Re),
-	case V of
+	case interpret_one_dataset(R, Re) of
 		nomatch -> Acc1=Acc;
-		_ -> Acc1=[V|Acc]
+		V -> Acc1=[V|Acc]
 	end,	
 	interpret_data(Tail, Re, Acc1);
 
@@ -94,7 +116,6 @@ interpret_data([], Acc) ->
 %% has valid compiled Re
 interpret_one_dataset(R, MP) ->
 	Content=struct:get_value(<<"content">>, R),
-	io:format("One record=~n~p~n", [R]),
 	S=binary_to_list(Content),
 	case re:run(S,MP) of
 		{match, _} -> R;
@@ -102,10 +123,7 @@ interpret_one_dataset(R, MP) ->
 	end.	
 
 interpret_one_dataset(R) ->
-	Content=struct:get_value(<<"content">>, R),
-	S=binary_to_list(Content),
-	io:format("~p~n", [S]),
-	S.
+	R.
 
 %% Internal API
 
