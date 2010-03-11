@@ -37,14 +37,17 @@ loop(Req, DocRoot) ->
 					Data = Req:parse_post(),
 					Searchstring = proplists:get_value("searchstring", Data),
 					Regexstring = proplists:get_value("regexstring", Data),
-					Re= re:compile(Regexstring) ,
+					Re= re:compile(Regexstring) , %% might return {error, Error}
+					{ReParseResult,_} = Re,		
 
 					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
 						++ edoc_lib:escape_uri(Searchstring),
 					
 					Results = talk_to_google(Url, Re, [], 0),
 
-					DataOut = mochijson2:encode( {struct, [{<<"results">>, Results}]}),
+					DataOut = mochijson2:encode( {struct, [
+						{<<"results">>, Results}, 
+						{<<"reparser">>, ReParseResult}]}),
 					Req:ok({"application/json", [], [DataOut]} );
 					
                 _ ->
@@ -68,27 +71,21 @@ talk_to_google(Url, Re, ResultsIn, Start ) ->
 	Struct = mochijson2:decode(Body),
 	ResponseData=struct:get_value(<<"responseData">>, Struct),
 
-	io:format("responseData = ~p ~n", [ResponseData]),
+	%% io:format("responseData = ~p ~n", [ResponseData]),
 	case ResponseData of
 		null -> 
-			ResultsIn;
+			lists:reverse(ResultsIn);
 		_ ->
 			ResponseResults=struct:get_value(<<"results">>, ResponseData),
 			% scan the results and filter with the regular expression
-			case Re of 
-				{ok, MP} -> 
-					Results= ResultsIn ++ interpret_data(ResponseResults, MP, []);
-				{error, _ErrorSpec} ->
-					Results= ResultsIn ++ interpret_data(ResponseResults,  [])
-			end,
-
+			Results= lists:flatten([interpret_data(ResponseResults, Re, [] )|ResultsIn]),
 
 			if 
 				length(Results) < 20 ->
 					_CursorData = struct:get_value(<<"cursor">>, ResponseData),
 					talk_to_google(Url, Re, Results, Start+4);
 				true ->
-					Results
+					lists:reverse(Results)
 			end		
 		end.		
 
@@ -102,28 +99,24 @@ interpret_data([R|Tail], Re, Acc ) ->
 	end,	
 	interpret_data(Tail, Re, Acc1);
 
-interpret_data([], _, Acc) ->
-	lists:reverse(Acc).
+interpret_data([], _Re, Acc) ->
+	Acc.
 
-interpret_data([R|Tail], Acc ) ->
-	V=interpret_one_dataset(R),
-	interpret_data(Tail, [V|Acc]);
-
-interpret_data([], Acc) ->
-	lists:reverse(Acc).
 
 % one dataset is an array with various fields	
 %% has valid compiled Re
-interpret_one_dataset(R, MP) ->
+interpret_one_dataset(R, Re) ->
 	Content=struct:get_value(<<"content">>, R),
 	S=binary_to_list(Content),
-	case re:run(S,MP) of
-		{match, _} -> R;
-		nomatch -> nomatch
-	end.	
-
-interpret_one_dataset(R) ->
-	R.
+	case Re of 
+		{ok, MP} ->
+			case re:run(S,MP) of
+				{match, _} -> R;
+				nomatch -> nomatch
+			end;	
+		{error, _ErrorSpec} ->
+			R
+	end.		
 
 %% Internal API
 

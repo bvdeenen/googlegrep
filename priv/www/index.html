@@ -8,6 +8,9 @@
 .result {
 	border-top: thin solid blue;
 }
+.re_error {
+	border: thick solid red !important;
+}
 </style>
 <script src='http://ajax.googleapis.com/ajax/libs/dojo/1.4.1/dojo/dojo.xd.js'
 	type='text/javascript' 
@@ -38,6 +41,12 @@ function sendForm() {
 			handleAs: "json",
 			load: function(data) {
 				handle_results(data.results);
+				if ( data.reparser != "ok") {
+					dojo.addClass("regexstring", "re_error");
+				}
+				else {
+					dojo.removeClass("regexstring", "re_error");
+				}
 			},
 			error: function(error) {
 				//We'll 404 in the demo, but that's okay.  We don't have a 'postIt' service on the
@@ -76,7 +85,7 @@ function handle_results(data)
 <hr>
 <form id="form1" action="ggrep" name="ggrep" method="post">
   <input id="searchstring" type="text" name="searchstring" 
-    value="testing testing" 
+    value='"Bart van Deenen"' 
     style="width: 100px;" 
     dojoType="dijit.form.TextBox" />
   <input id="regexstring" type="text" name="regexstring" 
