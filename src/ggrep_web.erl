@@ -44,10 +44,7 @@ loop(Req, DocRoot) ->
 						++ edoc_lib:escape_uri(Searchstring),
 					
 					Results = talk_to_google(Url, Re, [], 0),
-
-					DataOut = mochijson2:encode( {struct, [
-						{<<"results">>, Results}, 
-						{<<"reparser">>, ReParseResult}]}),
+					DataOut = mochijson2:encode( struct:set_value(<<"reparser">>, ReParseResult, Results)),
 					Req:ok({"application/json", [], [DataOut]} );
 					
                 _ ->
@@ -65,16 +62,15 @@ talk_to_google(Url, Re, ResultsIn, Start ) ->
 	io:format("talk_to_google ~p ~p~n", [UrlWithStart, length(ResultsIn)]),
 
 	{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
-		http:request(get, {UrlWithStart, 
-			[{"User-Agent", UserAgent}, {"Referer",
-		"http://www.vandeenensupport.com"}]},[],[]),
+		http:request(get, {UrlWithStart, [{"User-Agent", UserAgent}, 
+			{"Referer", "http://www.vandeenensupport.com"}]},[],[]),
 	Struct = mochijson2:decode(Body),
 	ResponseData=struct:get_value(<<"responseData">>, Struct),
 
 	%% io:format("responseData = ~p ~n", [ResponseData]),
 	case ResponseData of
 		null -> 
-			lists:reverse(ResultsIn);
+			results_to_struct(ResultsIn, Start-4, nomore);
 		_ ->
 			ResponseResults=struct:get_value(<<"results">>, ResponseData),
 			% scan the results and filter with the regular expression
@@ -85,17 +81,25 @@ talk_to_google(Url, Re, ResultsIn, Start ) ->
 					_CursorData = struct:get_value(<<"cursor">>, ResponseData),
 					talk_to_google(Url, Re, Results, Start+4);
 				true ->
-					lists:reverse(Results)
+					results_to_struct(Results, Start)
 			end		
 		end.		
 
+results_to_struct(Results, Start) ->
+	{struct, [
+		{<<"results">>, lists:reverse(Results)},
+		{<<"start">>, Start}]}.
+
+results_to_struct(Results, Start, nomore) ->
+	struct:set_value( <<"nomore">>, true, 
+		results_to_struct(Results, Start)).
 	
 
 %% actual html search result data
 interpret_data([R|Tail], Re, Acc ) ->
 	case interpret_one_dataset(R, Re) of
 		nomatch -> Acc1=Acc;
-		V -> Acc1=[V|Acc]
+		V       -> Acc1=[V|Acc]
 	end,	
 	interpret_data(Tail, Re, Acc1);
 
@@ -114,6 +118,7 @@ interpret_one_dataset(R, Re) ->
 				{match, _} -> R;
 				nomatch -> nomatch
 			end;	
+		% invalid Re string
 		{error, _ErrorSpec} ->
 			R
 	end.		

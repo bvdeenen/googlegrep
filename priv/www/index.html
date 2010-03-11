@@ -64,14 +64,12 @@ dojo.addOnLoad(sendForm);
 
 function handle_results(data)
 {
-	console.log(data);
 	var div=dojo.byId("results");
 	div.innerHTML="";
 	for(var i=0;i<data.length;i++) {
 		var d=document.createElement("div");
 		dojo.addClass(d,"result");
 		d.innerHTML=data[i].content;
-		console.log(data[i].content);
 		div.appendChild(d);
 		
 	}
