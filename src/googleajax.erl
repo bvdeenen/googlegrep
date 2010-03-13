@@ -14,6 +14,7 @@ start() ->
 
 			UrlWithStart=lists:flatten(Url ++ io_lib:format("&start=~p", [Start])),
 
+			io:format("Request ~p ~n", [UrlWithStart]),
 			{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
 				http:request(get, {UrlWithStart, [{"User-Agent", UserAgent}, 
 					{"Referer", "http://www.vandeenensupport.com"}]},[],[]),
@@ -22,13 +23,15 @@ start() ->
 			case ResponseData of
 				null -> 
 					%% beyond the last google page
+					io:format("Page ~p was empty~n", [Start]),
 					R=null;
 				_ ->
+					io:format("Page ~p returned data~n", [Start]),
 					ResponseResults=struct:get_value(<<"results">>, ResponseData),
 					Results= lists:flatten(interpret_data(ResponseResults, Re, [] )),
 					R={struct, [ {<<"results">>, Results}]}
 				end,
-			Pid ! {start, Start, R}
+			Pid ! {self(), start, Start, R}
 	end.
 	
 
@@ -36,24 +39,31 @@ spawn_http_requests(Url, Re) ->
 	spawn_http_requests(Url, Re, 0, dict:new()).
 
 spawn_http_requests(Url, Re, Start, PageDict1 ) ->
-	Pid = spawn_link(fun googleajax:start/0),
-	PageDict = dict:store(Start, ok, PageDict1),
+	Pid = spawn(fun googleajax:start/0),
+	PageDict = dict:store(Pid, ok, PageDict1),
 	%% io:format("created process ~p~n", [Pid]),
 	Pid ! { self(), Url, Re, Start},
 
-	if Start < 64 ->
+	if Start < 20 ->
 		spawn_http_requests(Url, Re, Start+4, PageDict);
 	true ->
 		PageDict
 	end.
 
 		
-
+kill_http_request_processes([Pid|PagePids]) ->
+	io:format("killing ~p~n", [Pid]),
+	exit(Pid, kill),
+	kill_http_request_processes(PagePids);
+	
+kill_http_request_processes([]) ->
+	ok.
+	
 
 collect_results(PageDict1, Acc) ->
 	receive 
-		{start, Start, Results}=ResultsData ->
-			PageDict = dict:erase(Start, PageDict1),
+		{Pid, start, Start, Results} ->
+			PageDict = dict:erase(Pid, PageDict1),
 			%% size(PageDict) should also work!
 			case length(dict:fetch_keys(PageDict)) of
 				0 -> 
@@ -62,13 +72,14 @@ collect_results(PageDict1, Acc) ->
 				_ ->	
 					case Results of
 						null -> collect_results(PageDict, Acc);
-						_ -> collect_results(PageDict, [ResultsData|Acc])
+						_ -> collect_results(PageDict, [{start, Start, Results} |Acc])
 					end	
 				end;
 		Unexpected ->
 			io:format("Unexpected ~p~n", [Unexpected])
-		after 8000 	->
+		after 15000 	->
 			io:format("timeout~n"),
+			kill_http_request_processes(dict:fetch_keys(PageDict1)),
 			lists:keysort(2,Acc)
 	end.
 
