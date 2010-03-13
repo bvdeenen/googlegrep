@@ -43,8 +43,9 @@ loop(Req, DocRoot) ->
 					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
 						++ edoc_lib:escape_uri(Searchstring),
 					
-					Results = googleajax:talk_to_google(Url, Re, [], 0),
-					DataOut = mochijson2:encode( struct:set_value(<<"reparser">>, ReParseResult, Results)),
+					Results = googleajax:talk_to_google(Url, Re),
+					DataOut = mochijson2:encode( struct:set_value(<<"reparser">>, ReParseResult, 
+						{struct, [{<<"results">>,Results}]})),
 					Req:ok({"application/json", [], [DataOut]} );
 					
                 _ ->
