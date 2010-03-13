@@ -21,12 +21,11 @@ start() ->
 			ResponseData=struct:get_value(<<"responseData">>, Struct),
 			case ResponseData of
 				null -> 
-					%% ready
+					%% beyond the last google page
 					R=null;
 				_ ->
 					ResponseResults=struct:get_value(<<"results">>, ResponseData),
-					Results= lists:flatten(interpret_data(ResponseResults, Re,
-						[] )),
+					Results= lists:flatten(interpret_data(ResponseResults, Re, [] )),
 					R={struct, [ {<<"results">>, Results}]}
 				end,
 			Pid ! {start, Start, R}
@@ -34,34 +33,42 @@ start() ->
 	
 
 spawn_http_requests(Url, Re) ->
-	spawn_http_requests(Url, Re, 0).
+	spawn_http_requests(Url, Re, 0, dict:new()).
 
-spawn_http_requests(Url, Re, Start) ->
+spawn_http_requests(Url, Re, Start, PageDict1 ) ->
 	Pid = spawn_link(fun googleajax:start/0),
+	PageDict = dict:store(Start, ok, PageDict1),
+	%% io:format("created process ~p~n", [Pid]),
 	Pid ! { self(), Url, Re, Start},
 
 	if Start < 64 ->
-		spawn_http_requests(Url, Re, Start+4);
+		spawn_http_requests(Url, Re, Start+4, PageDict);
 	true ->
-		done
+		PageDict
 	end.
 
 		
 
-collect_results() ->
-	collect_results([]).
 
-collect_results(Acc) ->
+collect_results(PageDict1, Acc) ->
 	receive 
-		{start, _Start, null} ->
-			collect_results(Acc);
-		{start, _Start, _Results}=ResultsData ->
-			%io:format("collect_results: ~p~n", [Rd]),
-			collect_results([ResultsData|Acc]);
+		{start, Start, Results}=ResultsData ->
+			PageDict = dict:erase(Start, PageDict1),
+			%% size(PageDict) should also work!
+			case length(dict:fetch_keys(PageDict)) of
+				0 -> 
+					io:format("all http processes have returned~n"),
+					lists:keysort(2,Acc);
+				_ ->	
+					case Results of
+						null -> collect_results(PageDict, Acc);
+						_ -> collect_results(PageDict, [ResultsData|Acc])
+					end	
+				end;
 		Unexpected ->
 			io:format("Unexpected ~p~n", [Unexpected])
-
-		after 2000 	->
+		after 8000 	->
+			io:format("timeout~n"),
 			lists:keysort(2,Acc)
 	end.
 
@@ -72,14 +79,13 @@ unpack_results([{start, _Start, Results} |Tail], Acc) when Results =/= null ->
 
 unpack_results([],Acc) ->
 	%%io:format("Acc=~n~p~n", [Acc]),
-	lists:flatten(lists:reverse(Acc)).
+	lists:reverse(lists:flatten(Acc)).
 	
 	
 talk_to_google(Url, Re) ->
-	spawn_http_requests(Url, Re),
-	Results=collect_results(), %% list of Re filtered page results
+	PageDict = spawn_http_requests(Url, Re),
+	Results=collect_results(PageDict, []), %% list of Re filtered page results
 	Results1=unpack_results(Results, []),
-	io:format("Results1 = ~n~p~n", [Results1]),
 	Results1.
 
 
