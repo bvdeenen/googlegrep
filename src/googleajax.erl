@@ -36,11 +36,11 @@ start() ->
 	
 
 spawn_http_requests(Url, Re) ->
-	spawn_http_requests(Url, Re, 0, dict:new()).
+	spawn_http_requests(Url, Re, 0, sets:new()).
 
 spawn_http_requests(Url, Re, Start, PageDict1 ) ->
 	Pid = spawn(fun googleajax:start/0),
-	PageDict = dict:store(Pid, ok, PageDict1),
+	PageDict = sets:add_element(Pid, PageDict1),
 	%% io:format("created process ~p~n", [Pid]),
 	Pid ! { self(), Url, Re, Start},
 
@@ -51,21 +51,16 @@ spawn_http_requests(Url, Re, Start, PageDict1 ) ->
 	end.
 
 		
-kill_http_request_processes([Pid|PagePids]) ->
-	io:format("killing ~p~n", [Pid]),
-	exit(Pid, kill),
-	kill_http_request_processes(PagePids);
-	
-kill_http_request_processes([]) ->
-	ok.
+kill_http_request_processes(Set) ->
+	io:format("Killing ~p http processes~n", [sets:size(Set)]),
+	lists:map(fun(Pid) -> exit(Pid,kill) end, sets:to_list(Set)).
 	
 
 collect_results(PageDict1, Acc) ->
 	receive 
 		{Pid, start, Start, Results} ->
-			PageDict = dict:erase(Pid, PageDict1),
-			%% size(PageDict) should also work!
-			case length(dict:fetch_keys(PageDict)) of
+			PageDict = sets:del_element(Pid, PageDict1),
+			case sets:size(PageDict) of
 				0 -> 
 					io:format("all http processes have returned~n"),
 					lists:keysort(2,Acc);
@@ -77,9 +72,9 @@ collect_results(PageDict1, Acc) ->
 				end;
 		Unexpected ->
 			io:format("Unexpected ~p~n", [Unexpected])
-		after 15000 	->
+		after 1500 	->
 			io:format("timeout~n"),
-			kill_http_request_processes(dict:fetch_keys(PageDict1)),
+			kill_http_request_processes(PageDict1),
 			lists:keysort(2,Acc)
 	end.
 
