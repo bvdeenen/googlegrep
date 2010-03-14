@@ -2,58 +2,49 @@
 -author('author <author@example.com>').
 
 -compile(export_all).
-%-export([start/1, stop/0, loop/2]).
+-export([talk_to_google/2]).
 
 
 %% send one http request to google, and when the result has been received,
 % send the result to the owning process
-start() ->
-	receive 
-		{Pid, Url, Re, Start} ->
-			UserAgent="bart's erlang google thingy",
+start(Pid, Url, Re, Start) ->
+	UserAgent="bart's erlang google thingy",
 
-			UrlWithStart=lists:flatten(Url ++ io_lib:format("&start=~p", [Start])),
+	UrlWithStart=lists:flatten(Url ++ io_lib:format("&start=~p", [Start])),
 
-			io:format("Request ~p ~n", [UrlWithStart]),
-			{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
-				http:request(get, {UrlWithStart, [{"User-Agent", UserAgent}, 
-					{"Referer", "http://www.vandeenensupport.com"}]},[],[]),
-			Struct = mochijson2:decode(Body),
-			ResponseData=struct:get_value(<<"responseData">>, Struct),
-			case ResponseData of
-				null -> 
-					%% beyond the last google page
-					io:format("Page ~p was empty~n", [Start]),
-					R=null;
-				_ ->
-					io:format("Page ~p returned data~n", [Start]),
-					ResponseResults=struct:get_value(<<"results">>, ResponseData),
-					Results= lists:flatten(interpret_data(ResponseResults, Re, [] )),
-					R={struct, [ {<<"results">>, Results}]}
-				end,
-			Pid ! {self(), start, Start, R}
-	end.
+	io:format("Request ~p ~n", [UrlWithStart]),
+	{ok, {{_HttpVer, _Code, _Msg}, _Headers, Body}} =  
+		http:request(get, {UrlWithStart, [{"User-Agent", UserAgent}, 
+			{"Referer", "http://www.vandeenensupport.com"}]},[],[]),
+	Struct = mochijson2:decode(Body),
+	ResponseData=struct:get_value(<<"responseData">>, Struct),
+	case ResponseData of
+		null -> 
+			%% beyond the last google page
+			io:format("Page ~p was empty~n", [Start]),
+			R=null;
+		_ ->
+			ResponseResults=struct:get_value(<<"results">>, ResponseData),
+			Results= lists:reverse(interpret_data(ResponseResults, Re, [])),
+			io:format("Page ~p matched ~p times~n", [Start, length(Results)]),
+			R={struct, [ {<<"results">>, Results}]}
+		end,
+	% send information back to owning process
+	Pid ! {self(), start, Start, R}.
 	
 
+% spawn google ajax processes an return a set of Pid's
 spawn_http_requests(Url, Re) ->
-	spawn_http_requests(Url, Re, 0, sets:new()).
-
-spawn_http_requests(Url, Re, Start, PageDict1 ) ->
-	Pid = spawn(fun googleajax:start/0),
-	PageDict = sets:add_element(Pid, PageDict1),
-	%% io:format("created process ~p~n", [Pid]),
-	Pid ! { self(), Url, Re, Start},
-
-	if Start < 20 ->
-		spawn_http_requests(Url, Re, Start+4, PageDict);
-	true ->
-		PageDict
-	end.
+	Pid=self(),
+	L=lists:map( fun(Start) ->
+		spawn(fun() -> start(Pid, Url, Re, Start) end) end, 
+		lists:seq(0,20,4)),
+	sets:from_list(L).
 
 		
-kill_http_request_processes(Set) ->
-	io:format("Killing ~p http processes~n", [sets:size(Set)]),
-	lists:map(fun(Pid) -> exit(Pid,kill) end, sets:to_list(Set)).
+kill_http_request_processes(Pids) ->
+	io:format("Killing ~p http processes~n", [sets:size(Pids)]),
+	lists:map(fun(Pid) -> exit(Pid,kill) end, sets:to_list(Pids)).
 	
 
 collect_results(PageDict1, Acc) ->
@@ -78,21 +69,12 @@ collect_results(PageDict1, Acc) ->
 			lists:keysort(2,Acc)
 	end.
 
-unpack_results([{start, _Start, Results} |Tail], Acc) when Results =/= null ->
-	
-	V=struct:get_value(<<"results">>, Results),
-	unpack_results(Tail, [V|Acc]);
-
-unpack_results([],Acc) ->
-	%%io:format("Acc=~n~p~n", [Acc]),
-	lists:reverse(lists:flatten(Acc)).
-	
-	
 talk_to_google(Url, Re) ->
 	PageDict = spawn_http_requests(Url, Re),
 	Results=collect_results(PageDict, []), %% list of Re filtered page results
-	Results1=unpack_results(Results, []),
-	Results1.
+	%% create list of the results
+	lists:flatten(lists:map(fun({start, _, R}) -> 
+		struct:get_value(<<"results">>, R) end, Results)).
 
 
 	
