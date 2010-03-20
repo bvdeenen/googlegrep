@@ -37,7 +37,13 @@ loop(Req, DocRoot) ->
 					Data = Req:parse_post(),
 					Searchstring = proplists:get_value("searchstring", Data),
 					Regexstring = proplists:get_value("regexstring", Data),
-					Re= re:compile(Regexstring) , %% might return {error, Error}
+					CaseSensitive = proplists:get_value("casesensitive", Data),
+					case CaseSensitive of
+						undefined -> Options = [caseless];
+						_ -> Options = []
+					end,	
+
+					Re= re:compile(Regexstring, Options) , %% might return {error, Error}
 					{ReParseResult,_} = Re,		
 
 					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
