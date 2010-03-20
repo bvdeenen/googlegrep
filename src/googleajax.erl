@@ -1,12 +1,16 @@
 -module(googleajax).
--author('author <author@example.com>').
+-author('Bart van Deene').
 
 -compile(export_all).
 -export([talk_to_google/2]).
+-define( HTMLTAG_RE, tagmatcher()).
 
+tagmatcher() ->
+	{ok, M} = re:compile("<[^>]+>",[multiline,dotall,ungreedy]),
+	M.
 
-%% send one http request to google, and when the result has been received,
-% send the result to the owning process
+%% send one http request to google, and when the result has been received 
+% and filtered, send the result to the owning process
 start(Pid, Url, Re, Start) ->
 	UserAgent="bart's erlang google thingy",
 
@@ -89,16 +93,22 @@ interpret_data([R|Tail], Re, Acc ) ->
 interpret_data([], _Re, Acc) ->
 	Acc.
 
+	
 
 % one dataset is an array with various fields	
 %% has valid compiled Re
 interpret_one_dataset(R, Re) ->
 	Content=struct:get_value(<<"content">>, R),
-	S=binary_to_list(Content),
+	% remove tags
+	S=re:replace(Content, ?HTMLTAG_RE, "", [{return, list},global]),
+	
 	case Re of 
 		{ok, MP} ->
 			case re:run(S,MP) of
-				{match, _} -> R;
+				{match, _} -> 
+					S2=re:replace(S, MP, "<span class='match'>&</span>",
+						[{return,list}, global]),
+					struct:set_value(<<"content">>, list_to_binary(S2), R);
 				nomatch -> nomatch
 			end;	
 		% invalid Re string
