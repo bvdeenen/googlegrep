@@ -50,6 +50,7 @@ loop(Req, DocRoot) ->
 						++ edoc_lib:escape_uri(Searchstring),
 					
 					Results = googleajax:talk_to_google(Url, Re),
+	io:format("length(Results)=~p~n", [length(Results)]),
 					DataOut = mochijson2:encode( struct:set_value(<<"reparser">>, ReParseResult, 
 						{struct, [{<<"results">>,Results}]})),
 					Req:ok({"application/json", [], [DataOut]} );
