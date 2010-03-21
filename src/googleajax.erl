@@ -1,7 +1,7 @@
 -module(googleajax).
 -author('Bart van Deene').
 
--compile(export_all).
+%-compile(export_all).
 -export([talk_to_google/2]).
 -define( HTMLTAG_RE, tagmatcher()).
 
@@ -31,6 +31,7 @@ start(Pid, Url, Re, Start) ->
 			ResponseResults=struct:get_value(<<"results">>, ResponseData),
 			case Re of
 				{error, _} -> Results=ResponseResults;
+				{empty, _} -> Results=ResponseResults;
 				{ok, MP} -> Results=
 					lists:reverse(interpret_data(ResponseResults, MP, []))
 			end,

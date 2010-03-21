@@ -46,7 +46,7 @@ function sendForm() {
 			handleAs: "json",
 			load: function(data) {
 				handle_results(data.results);
-				if ( data.reparser != "ok") {
+				if ( data.reparser == "error") {
 					dojo.addClass("regexstring", "re_error");
 				}
 				else {

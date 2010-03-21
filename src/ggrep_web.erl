@@ -43,7 +43,11 @@ loop(Req, DocRoot) ->
 						_ -> Options = []
 					end,	
 
-					Re= re:compile(Regexstring, Options) , %% might return {error, Error}
+					Re= case Regexstring of
+						"" -> {empty, ""};
+						_ -> re:compile(Regexstring, Options) 
+					end, %% might return {error, Error}
+
 					{ReParseResult,_} = Re,		
 
 					Url="http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q="
