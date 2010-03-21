@@ -3,15 +3,15 @@
 
 %-compile(export_all).
 -export([talk_to_google/2]).
--define( HTMLTAG_RE, tagmatcher()).
 
 tagmatcher() ->
-	{ok, M} = re:compile("<[^>]+>",[multiline,dotall,ungreedy]),
-	M.
+	{ok, MP} = re:compile("<[^>]+>",[multiline,dotall,ungreedy]),
+	io:format("Compiled regular expression for html tags ~p~n", [MP]),
+	MP.
 
 %% send one http request to google, and when the result has been received
 % and filtered, send the result to the owning process
-start(Pid, Url, Re, Start) ->
+spawn_one_http_to_google(Pid, Url, Re, Start, TagRe) ->
 	UserAgent="bart's erlang google thingy",
 
 	UrlWithStart=lists:flatten(Url ++ io_lib:format("&start=~p", [Start])),
@@ -33,7 +33,7 @@ start(Pid, Url, Re, Start) ->
 				{error, _} -> Results=ResponseResults;
 				{empty, _} -> Results=ResponseResults;
 				{ok, MP} -> Results=
-					lists:reverse(interpret_data(ResponseResults, MP, []))
+					lists:reverse(interpret_data(ResponseResults, MP, TagRe, []))
 			end,
 			io:format("Page ~p matched ~p times~n", [Start, length(Results)]),
 			R={struct, [ {<<"results">>, Results}]}
@@ -45,8 +45,10 @@ start(Pid, Url, Re, Start) ->
 % spawn google ajax processes an return a set of Pid's
 spawn_http_requests(Url, Re) ->
 	Pid=self(),
+	TagRe=get(tagre),
 	L=lists:map( fun(Start) ->
-		spawn(fun() -> start(Pid, Url, Re, Start) end) end,
+		spawn(fun() ->
+			spawn_one_http_to_google(Pid, Url, Re, Start, TagRe) end) end,
 		lists:seq(0,20,4)),
 	sets:from_list(L).
 
@@ -80,6 +82,13 @@ collect_results(PageSet1, Acc) ->
 	end.
 
 talk_to_google(Url, Re) ->
+	case get(tagre) of
+		undefined ->
+			put(tagre, tagmatcher());
+		_ ->
+			ok
+	end,
+
 	PageSet = spawn_http_requests(Url, Re),
 	Results=collect_results(PageSet, []), %% list of Re filtered page results
 	%% create list of the results
@@ -90,22 +99,22 @@ talk_to_google(Url, Re) ->
 
 
 %% actual html search result data
-interpret_data([R|Tail], MP, Acc ) ->
-	case interpret_one_dataset(R, MP) of
+interpret_data([R|Tail], MP, TagRe, Acc ) ->
+	case interpret_one_dataset(R, MP, TagRe) of
 		nomatch -> Acc1=Acc;
 		V       -> Acc1=[V|Acc]
 	end,
-	interpret_data(Tail, MP, Acc1);
+	interpret_data(Tail, MP, TagRe, Acc1);
 
-interpret_data([], _MP, Acc) ->
+interpret_data([], _MP, _TagRe, Acc) ->
 	Acc.
 
 % one dataset is an array with various fields
 %% has valid compiled Re
-interpret_one_dataset(R, MP) ->
+interpret_one_dataset(R, MP, TagRe) ->
 	Content=struct:get_value(<<"content">>, R),
 	% remove tags
-	S=re:replace(Content, ?HTMLTAG_RE, "", [{return, list},global]),
+	S=re:replace(Content, TagRe,  "", [{return, list},global]),
 	case re:run(S,MP) of
 		{match, _} ->
 			S2=re:replace(S, MP, "<span class='match'>&</span>",
