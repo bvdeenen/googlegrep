@@ -32,15 +32,18 @@ spawn_one_http_to_google(Pid, Url, Re, Start, TagRe) ->
 			case Re of
 				{error, _} -> Results=ResponseResults;
 				{empty, _} -> Results=ResponseResults;
-				{ok, MP} -> Results=
-					lists:reverse(interpret_data(ResponseResults, MP, TagRe, []))
+				{ok, MP} ->
+					  Results=lists:filter( fun(R) -> R =/= nomatch end,
+							lists:map( fun( R ) ->
+								interpret_one_dataset(R, MP, TagRe) end,
+								ResponseResults))
+					
 			end,
 			io:format("Page ~p matched ~p times~n", [Start, length(Results)]),
 			R={struct, [ {<<"results">>, Results}]}
 		end,
 	% send information back to owning process
 	Pid ! {self(), start, Start, R}.
-
 
 % spawn google ajax processes an return a set of Pid's
 spawn_http_requests(Url, Re) ->
@@ -52,11 +55,9 @@ spawn_http_requests(Url, Re) ->
 		lists:seq(0,20,4)),
 	sets:from_list(L).
 
-
 kill_http_request_processes(Pids) ->
-	io:format("Killing ~p http processes~n", [sets:size(Pids)]),
+	io:format("Killing ~p unfinished http processes~n", [sets:size(Pids)]),
 	lists:map(fun(Pid) -> exit(Pid,kill) end, sets:to_list(Pids)).
-
 
 collect_results(PageSet1, Acc) ->
 	receive
@@ -69,8 +70,9 @@ collect_results(PageSet1, Acc) ->
 					lists:keysort(2,[H|Acc]);
 				_ ->
 					case Results of
+						%% google returned null result, beyond last page
 						null -> collect_results(PageSet, Acc);
-						_ -> collect_results(PageSet, [H |Acc])
+						_    -> collect_results(PageSet, [H |Acc])
 					end
 				end;
 		Unexpected ->
@@ -83,31 +85,15 @@ collect_results(PageSet1, Acc) ->
 
 talk_to_google(Url, Re) ->
 	case get(tagre) of
-		undefined ->
-			put(tagre, tagmatcher());
-		_ ->
-			ok
+		undefined -> put(tagre, tagmatcher());
+		_         -> ok
 	end,
 
-	PageSet = spawn_http_requests(Url, Re),
+	PageSet = spawn_http_requests(Url, Re), %% PageSet is set of process id's
 	Results=collect_results(PageSet, []), %% list of Re filtered page results
-	%% create list of the results
-	L=lists:map(fun({start, _, R}) ->
-		struct:get_value(<<"results">>, R) end, Results),
-	lists:flatten(L).
+	lists:flatten(lists:map(fun({start, _, R}) ->
+		struct:get_value(<<"results">>, R) end, Results)).
 
-
-
-%% actual html search result data
-interpret_data([R|Tail], MP, TagRe, Acc ) ->
-	case interpret_one_dataset(R, MP, TagRe) of
-		nomatch -> Acc1=Acc;
-		V       -> Acc1=[V|Acc]
-	end,
-	interpret_data(Tail, MP, TagRe, Acc1);
-
-interpret_data([], _MP, _TagRe, Acc) ->
-	Acc.
 
 % one dataset is an array with various fields
 %% has valid compiled Re
